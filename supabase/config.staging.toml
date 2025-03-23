@@ -1,0 +1,24 @@
+[global]
+project_id = "staging-project"
+region = "eu-west-1"
+
+[auth]
+site_url = "https://staging.example.com"
+jwt_secret = "staging-secret-key"
+
+[storage]
+bucket_name = "staging-bucket"
+
+[database]
+host = "db.staging.example.com"
+port = 5432
+name = "staging_db"
+user = "staging_user"
+password = "staging_password"
+
+[functions]
+verify_jwt = true
+timeout = 30
+
+[realtime]
+enabled = true
