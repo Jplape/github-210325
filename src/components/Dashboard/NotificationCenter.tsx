@@ -40,7 +40,7 @@ export default function NotificationCenter({ tasks }: NotificationCenterProps) {
         title: 'Tâches en retard',
         message: `${overdueTasks.length} tâche(s) nécessite(nt) votre attention`,
         timestamp: now,
-        link: '/tasks?filter=overdue',
+        link: '/tasks?date=today',
         tasks: overdueTasks
       });
     }
@@ -57,7 +57,7 @@ export default function NotificationCenter({ tasks }: NotificationCenterProps) {
         title: 'Tâches non assignées',
         message: `${unassignedTodayTasks.length} tâche(s) du jour sans technicien`,
         timestamp: now,
-        link: '/tasks?filter=unassigned&date=today',
+        link: '/tasks?assignment=unassigned&status=all&priority=all&technician=all&client=all&equipment=all&date=all',
         tasks: unassignedTodayTasks
       });
     }

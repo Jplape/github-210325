@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Plus, Search, ArrowUp, ArrowDown } from 'lucide-react';
 import { useTaskStore } from '../store/taskStore';
 import TaskFilters from '../components/Tasks/TaskFilters';
@@ -19,15 +19,32 @@ export default function Tasks() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [sortField, setSortField] = useState<SortField>('id');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [filters, setFilters] = useState({
-    status: 'all',
-    priority: 'all',
-    technician: 'all',
-    client: 'all',
-    equipment: 'all',
-    assignment: 'all',
-    date: 'all'
+  const [filters, setFilters] = useState(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    return {
+      status: searchParams.get('status') || 'all',
+      priority: searchParams.get('priority') || 'all',
+      technician: searchParams.get('technician') === 'unassigned' ? 'unassigned' : 'all',
+      client: searchParams.get('client') || 'all',
+      equipment: searchParams.get('equipment') || 'all',
+      assignment: searchParams.get('assignment') || 'all',
+      date: searchParams.get('date') === 'today' ? 'today' : 'all'
+    };
   });
+
+  // Mettre à jour l'URL lorsque les filtres changent
+  useEffect(() => {
+    const searchParams = new URLSearchParams();
+    if (filters.status !== 'all') { searchParams.set('status', filters.status); }
+    if (filters.priority !== 'all') { searchParams.set('priority', filters.priority); }
+    if (filters.technician !== 'all') { searchParams.set('technician', filters.technician); }
+    if (filters.client !== 'all') { searchParams.set('client', filters.client); }
+    if (filters.equipment !== 'all') { searchParams.set('equipment', filters.equipment); }
+    if (filters.assignment !== 'all') { searchParams.set('assignment', filters.assignment); }
+    if (filters.date !== 'all') { searchParams.set('date', filters.date); }
+
+    window.history.replaceState(null, '', `?${searchParams.toString()}`);
+  }, [filters]);
 
   // Enable task synchronization
   useTaskSync();
@@ -291,7 +308,7 @@ export default function Tasks() {
           setSelectedTask(null);
         }}
         taskToEdit={selectedTask}
-      />
+      />;
     </div>
   );
 }

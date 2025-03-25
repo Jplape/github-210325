@@ -54,7 +54,35 @@ export default function TaskSummary({ tasks, onTaskClick }: TaskSummaryProps) {
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-medium text-gray-900">Résumé des tâches</h3>
+        <div>
+          <h3 className="text-lg font-medium text-gray-900">Résumé des tâches</h3>
+          <a
+            href="/tasks?status=active&priority=all&technician=all&client=all&equipment=all&assignment=unassigned&date=all"
+            className="text-sm text-indigo-600 hover:text-indigo-800"
+            onClick={async (e) => {
+              e.preventDefault();
+              const params = new URLSearchParams({
+                status: 'all',
+                priority: 'all',
+                technician: 'all',
+                client: 'all',
+                equipment: '',
+                assignment: 'unassigned',
+                date: 'all'
+              });
+              
+              // Afficher l'indicateur de chargement
+              e.currentTarget.textContent = 'Chargement...';
+              
+              // Attendre un court délai pour permettre le rendu visuel
+              await new Promise(resolve => setTimeout(resolve, 100));
+              
+              window.location.href = `/tasks?${params.toString()}`;
+            }}
+          >
+            Voir les tâches non assignées
+          </a>
+        </div>
         <select
           value={selectedStatus}
           onChange={(e) => setSelectedStatus(e.target.value as typeof selectedStatus)}
