@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
+import useSyncReports from './hooks/useSyncReports';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Calendar from './pages/Calendar';
@@ -30,6 +31,7 @@ const queryClient = new QueryClient({
 
 export default function App() {
   const user = useAuthStore((state) => state.user);
+  useSyncReports(); // Initialize reports sync with Firestore
 
   return (
     <QueryClientProvider client={queryClient}>

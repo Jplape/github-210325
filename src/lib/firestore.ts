@@ -1,132 +1,57 @@
-import admin from 'firebase-admin';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
-if (!admin.apps.length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT!);
-  
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-}
-
-const firestore = admin.firestore();
-
-// Initialize collections with schema validation
-const collections = {
-  Users: firestore.collection('Users'),
-  Clients: firestore.collection('Clients'),
-  Equipment: firestore.collection('Equipment'),
-  Interventions: firestore.collection('Interventions'),
-  Reports: firestore.collection('Reports'),
-  Notifications: firestore.collection('Notifications'),
-  ChatMessages: firestore.collection('ChatMessages'),
-  MaintenanceSchedules: firestore.collection('MaintenanceSchedules'),
-  AuditLogs: firestore.collection('AuditLogs'),
-  Settings: firestore.collection('Settings'),
-  Teams: firestore.collection('Teams')
+const firebaseConfig = {
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID
 };
 
-// Collection schemas
-const schemas = {
-  Users: {
-    id: 'string',
-    email: 'string',
-    role: ['admin', 'technician', 'client'],
-    fcmTokens: 'array',
-    createdAt: 'timestamp',
-    updatedAt: 'timestamp'
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+export const syncInterventionReports = {
+  // Sauvegarder un rapport
+  async saveReport(reportData: any) {
+    try {
+      const reportRef = doc(collection(db, 'interventionReports'));
+      await setDoc(reportRef, {
+        ...reportData,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      return reportRef.id;
+    } catch (error) {
+      console.error('Error saving report:', error);
+      throw error;
+    }
   },
-  Clients: {
-    id: 'string',
-    name: 'string',
-    address: 'string',
-    contactEmail: 'string',
-    contactPhone: 'string',
-    createdAt: 'timestamp',
-    updatedAt: 'timestamp'
+
+  // Écouter les changements
+  subscribeToReports(callback: (reports: any[]) => void) {
+    return onSnapshot(collection(db, 'interventionReports'), (snapshot) => {
+      const reports = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      callback(reports);
+    });
   },
-  Equipment: {
-    id: 'string',
-    clientId: 'string',
-    name: 'string',
-    type: 'string',
-    serialNumber: 'string',
-    installationDate: 'timestamp',
-    lastMaintenanceDate: 'timestamp',
-    createdAt: 'timestamp',
-    updatedAt: 'timestamp'
-  },
-  Interventions: {
-    id: 'string',
-    clientId: 'string',
-    equipmentId: 'string',
-    technicianId: 'string',
-    startDate: 'timestamp',
-    endDate: 'timestamp',
-    status: ['scheduled', 'in_progress', 'completed', 'cancelled'],
-    createdAt: 'timestamp',
-    updatedAt: 'timestamp'
-  },
-  Reports: {
-    id: 'string',
-    interventionId: 'string',
-    technicianId: 'string',
-    clientId: 'string',
-    equipmentId: 'string',
-    description: 'string',
-    actionsTaken: 'array',
-    recommendations: 'array',
-    status: ['draft', 'submitted', 'approved', 'rejected'],
-    createdAt: 'timestamp',
-    updatedAt: 'timestamp'
-  },
-  Notifications: {
-    id: 'string',
-    userId: 'string',
-    title: 'string',
-    body: 'string',
-    read: 'boolean',
-    data: 'map',
-    createdAt: 'timestamp'
-  },
-  ChatMessages: {
-    id: 'string',
-    senderId: 'string',
-    receiverId: 'string',
-    message: 'string',
-    read: 'boolean',
-    createdAt: 'timestamp'
-  },
-  MaintenanceSchedules: {
-    id: 'string',
-    equipmentId: 'string',
-    frequency: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'],
-    lastPerformed: 'timestamp',
-    nextDue: 'timestamp',
-    createdAt: 'timestamp',
-    updatedAt: 'timestamp'
-  },
-  AuditLogs: {
-    id: 'string',
-    userId: 'string',
-    action: 'string',
-    details: 'map',
-    timestamp: 'timestamp'
-  },
-  Settings: {
-    id: 'string',
-    key: 'string',
-    value: 'any',
-    createdAt: 'timestamp',
-    updatedAt: 'timestamp'
-  },
-  Teams: {
-    id: 'string',
-    name: 'string',
-    members: 'array',
-    leaderId: 'string',
-    createdAt: 'timestamp',
-    updatedAt: 'timestamp'
+
+  // Mettre à jour un rapport
+  async updateReport(reportId: string, updates: any) {
+    try {
+      const reportRef = doc(db, 'interventionReports', reportId);
+      await setDoc(reportRef, {
+        ...updates,
+        updatedAt: new Date()
+      }, { merge: true });
+    } catch (error) {
+      console.error('Error updating report:', error);
+      throw error;
+    }
   }
 };
-
-export { firestore, collections, schemas };

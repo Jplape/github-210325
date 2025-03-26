@@ -1,129 +1,84 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTaskStore } from '../store/taskStore';
 import { useCalendarStore } from '../store/calendarStore';
-import { parseISO, isValid } from 'date-fns';
 import { supabase } from '../../lib/supabase';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Task } from '../types/task';
-
-interface TaskWithOrigin extends Task {
-  origin?: 'local' | 'remote';
-}
-
-// Type guard pour vérifier les tâches incomplètes
-function isCompleteTask(task: Partial<Task>): task is Task {
-  return !!task.id && !!task.title && !!task.client && !!task.date &&
-         !!task.startTime && !!task.status && !!task.priority;
-}
+import { saveConflict } from '../services/ConflictHistoryDB';
 
 export function useTaskSync() {
-  const { tasks, lastUpdate, addTask, updateTask, deleteTask } = useTaskStore();
-  const { lastSync, updateLastSync } = useCalendarStore();
-  const isInitialMount = useRef(true);
+  const { tasks, addTask, updateTask, deleteTask } = useTaskStore();
+  const { updateLastSync } = useCalendarStore();
   const pendingSyncs = useRef<Set<string>>(new Set());
 
-  // Validation des tâches locales
-  const validateTasks = useCallback(() => {
-    const invalidTasks = tasks.filter(task => {
-      try {
-        return !task.date || !isValid(parseISO(task.date));
-      } catch {
-        return true;
-      }
-    });
+  const resolveConflict = (local: Task, remote: Task): Task => {
+    const localDate = new Date(local.updatedAt);
+    const remoteDate = new Date(remote.updatedAt);
+    
+    const resolved = remoteDate > localDate 
+      ? { ...local, ...remote }
+      : { ...remote, ...local };
 
-    if (invalidTasks.length > 0) {
-      console.warn('Invalid tasks detected:', invalidTasks);
-    }
-  }, [tasks]);
+    saveConflict(local.id, local, remote, resolved);
+    return resolved;
+  };
 
-  // Synchronisation des changements distants
   useEffect(() => {
     const subscription = supabase
-      .channel('tasks-sync')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'tasks'
-      }, (payload: RealtimePostgresChangesPayload<Task>) => {
-        // Ignorer les événements déclenchés localement
-        const incomingId = payload.new?.id || payload.old?.id;
-        if (!incomingId || pendingSyncs.current.has(incomingId)) {
-          return;
-        }
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tasks'
+        },
+        (payload) => {
+          const p = payload as unknown as { 
+            new?: Task; 
+            old?: Task; 
+            eventType: string 
+          };
+          
+          if (!p.new) return;
+          const taskId = p.new.id;
+          if (!taskId || pendingSyncs.current.has(taskId)) return;
 
-        const taskWithOrigin = {
-          ...payload.new || payload.old,
-          origin: 'remote'
-        };
-
-        switch (payload.eventType) {
-          case 'INSERT':
-            addTask(taskWithOrigin);
-            break;
-          case 'UPDATE':
-            updateTask(taskWithOrigin.id, taskWithOrigin);
-            break;
-          case 'DELETE':
-            deleteTask(payload.old.id);
-            break;
+          try {
+            switch (p.eventType) {
+              case 'INSERT':
+                addTask({ 
+                  ...p.new,
+                  origin: 'remote'
+                });
+                break;
+              case 'UPDATE':
+                const localTask = tasks.find(t => t.id === p.new?.id);
+                if (localTask && p.new) {
+                  const resolvedTask = resolveConflict(localTask, p.new);
+                  updateTask(resolvedTask.id, { 
+                    ...resolvedTask, 
+                    origin: 'remote'
+                  });
+                }
+                break;
+              case 'DELETE':
+                if (p.old) {
+                  deleteTask(p.old.id);
+                }
+                break;
+            }
+            updateLastSync();
+          } catch (error) {
+            console.error('Sync error:', error);
+          }
         }
-        updateLastSync(new Date().toISOString());
-      })
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, [addTask, updateTask, deleteTask, updateLastSync]);
-
-  // Envoi des modifications locales au serveur
-  const syncLocalChanges = useCallback(async (task: TaskWithOrigin) => {
-    if (task.origin === 'remote') return;
-
-    pendingSyncs.current.add(task.id);
-    try {
-      const { error } = await supabase
-        .from('tasks')
-        .upsert({ ...task, origin: undefined });
-
-      if (error) throw error;
-    } finally {
-      pendingSyncs.current.delete(task.id);
-    }
-  }, []);
-
-  // Synchronisation des changements locaux
-  useEffect(() => {
-    if (isInitialMount.current) {
-      validateTasks();
-      isInitialMount.current = false;
-      return;
-    }
-
-    if (lastUpdate > lastSync) {
-      validateTasks();
-      // Synchroniser uniquement les tâches modifiées localement
-      tasks
-        .filter(task => !task.origin || task.origin === 'local')
-        .forEach(syncLocalChanges);
-      updateLastSync();
-    }
-  }, [lastUpdate, lastSync, tasks, updateLastSync, validateTasks, syncLocalChanges]);
-
-  // Synchronisation des changements locaux
-  useEffect(() => {
-    if (isInitialMount.current) {
-      validateTasks();
-      isInitialMount.current = false;
-      return;
-    }
-
-    if (lastUpdate > lastSync) {
-      validateTasks();
-      updateLastSync();
-    }
-  }, [lastUpdate, lastSync, updateLastSync, validateTasks]);
+  }, [addTask, updateTask, deleteTask, updateLastSync, tasks]);
 
   return null;
 }

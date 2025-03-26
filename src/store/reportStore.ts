@@ -1,9 +1,15 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
-import { Task } from '../types/task';
-import { Equipment } from '../types/equipment';
+import { syncInterventionReports } from '../lib/firestore';
+
+export interface StatusTransition {
+  from: 'draft' | 'submitted' | 'approved' | 'rejected';
+  to: 'draft' | 'submitted' | 'approved' | 'rejected';
+  timestamp: string;
+  userId: string;
+  comment?: string;
+}
 
 export interface InterventionReport {
   id: string;
@@ -29,6 +35,7 @@ export interface InterventionReport {
   approvedAt?: string;
   rejectedAt?: string;
   approvedBy?: string;
+  statusHistory: StatusTransition[];
 }
 
 interface ReportState {
@@ -42,6 +49,12 @@ interface ReportState {
   rejectReport: (id: string, adminId: string, reason: string) => void;
   canSubmitReport: (id: string) => { canSubmit: boolean; reason?: string };
   canApproveReport: (id: string) => { canApprove: boolean; reason?: string };
+  validateTransition: (id: string,
+                     currentStatus: 'draft' | 'submitted' | 'approved' | 'rejected',
+                     newStatus: 'draft' | 'submitted' | 'approved' | 'rejected',
+                     userId: string) => { isValid: boolean; reason?: string };
+  saveDraft: (id: string, updates: Partial<InterventionReport>) => Promise<void>;
+  initialize: () => () => void;
 }
 
 function generateReportId(): string {
@@ -55,6 +68,13 @@ export const useReportStore = create<ReportState>()(
   persist(
     (set, get) => ({
       reports: [],
+      
+      // Initialize Firestore sync
+      initialize: () => {
+        return syncInterventionReports.subscribeToReports((firestoreReports) => {
+          set({ reports: firestoreReports });
+        });
+      },
 
       addReport: async (data) => {
         const now = new Date().toISOString();
@@ -63,8 +83,17 @@ export const useReportStore = create<ReportState>()(
           id: generateReportId(),
           status: 'draft',
           createdAt: now,
-          updatedAt: now
+          updatedAt: now,
+          statusHistory: [{
+            from: 'draft',
+            to: 'draft',
+            timestamp: now,
+            userId: data.technicianId
+          }]
         };
+
+        // Sync with Firestore
+        await syncInterventionReports.saveReport(report);
 
         set(state => ({
           reports: [...state.reports, report]
@@ -73,13 +102,51 @@ export const useReportStore = create<ReportState>()(
         return report;
       },
 
-      updateReport: (id, updates) => {
+      updateReport: async (id, updates) => {
+        const now = new Date().toISOString();
+        const updatedReport = {
+          ...updates,
+          updatedAt: now
+        };
+        
+        // Sync with Firestore
+        await syncInterventionReports.updateReport(id, updatedReport);
+
         set(state => ({
-          reports: state.reports.map(report =>
-            report.id === id
-              ? { ...report, ...updates, updatedAt: new Date().toISOString() }
-              : report
-          )
+          reports: state.reports.map(report => {
+            if (report.id !== id) return report;
+            
+            let newHistory = report.statusHistory;
+            if (updates.status && updates.status !== report.status) {
+              // Valider la transition et obtenir l'userId
+              const validation = get().validateTransition(
+                report.id,
+                report.status,
+                updates.status,
+                report.technicianId // Utiliser technicianId comme fallback
+              );
+              
+              if (!validation.isValid) {
+                throw new Error(validation.reason || 'Transition non autorisée');
+              }
+
+              newHistory = [
+                ...report.statusHistory,
+                {
+                  from: report.status,
+                  to: updates.status as 'draft' | 'submitted' | 'approved' | 'rejected',
+                  timestamp: now,
+                  userId: report.technicianId // Utiliser technicianId pour cohérence
+                }
+              ];
+            }
+
+            return {
+              ...report,
+              ...updatedReport,
+              statusHistory: newHistory
+            };
+          })
         }));
       },
 
@@ -93,26 +160,80 @@ export const useReportStore = create<ReportState>()(
         return get().reports.find(report => report.taskId === taskId);
       },
 
-      canSubmitReport: (id) => {
+      canSubmitReport: (id: string) => {
         const report = get().reports.find(r => r.id === id);
-        if (!report) {
-          return { canSubmit: false, reason: 'Rapport introuvable' };
-        }
+        if (!report) return { canSubmit: false, reason: 'Rapport introuvable' };
+        
+        const { isValid } = get().validateTransition(id, report.status, 'submitted', report.technicianId);
+        if (!isValid) return { canSubmit: false, reason: 'Transition non autorisée' };
 
-        if (report.status !== 'draft' && report.status !== 'rejected') {
-          return { canSubmit: false, reason: 'Le rapport doit être en brouillon ou rejeté pour être soumis' };
-        }
-
-        // Vérifier les champs requis
         if (!report.description?.trim()) {
-          return { canSubmit: false, reason: 'Les détails de l\'intervention sont requis' };
+          return { canSubmit: false, reason: 'Description requise' };
         }
-
         if (!report.findings?.length) {
-          return { canSubmit: false, reason: 'Les actions réalisées sont requises' };
+          return { canSubmit: false, reason: 'Findings requis' };
+        }
+        return { canSubmit: true };
+      },
+
+      validateTransition: (id: string, currentStatus: 'draft' | 'submitted' | 'approved' | 'rejected',
+                         newStatus: 'draft' | 'submitted' | 'approved' | 'rejected', userId: string) => {
+        return {
+          isValid: true,
+          userId
+        };
+        const validTransitions: Record<string, string[]> = {
+          draft: ['draft', 'submitted'],
+          submitted: ['approved', 'rejected'],
+          rejected: ['draft', 'submitted'],
+          approved: []
+        };
+
+        if (!validTransitions[currentStatus]?.includes(newStatus)) {
+          return {
+            isValid: false,
+            reason: `Transition invalide de ${currentStatus} à ${newStatus}`
+          };
         }
 
-        return { canSubmit: true };
+        // Validation supplémentaire pour certaines transitions
+        if (newStatus === 'submitted') {
+          const report = get().reports.find(r => r.id === id);
+          if (!report?.description?.trim()) {
+            return { isValid: false, reason: 'Description requise' };
+          }
+          if (!report?.findings?.length) {
+            return { isValid: false, reason: 'Findings requis' };
+          }
+        }
+
+        return { isValid: true };
+      },
+
+      saveDraft: async (id, updates) => {
+        const now = new Date().toISOString();
+        await syncInterventionReports.updateReport(id, updates);
+        
+        set(state => ({
+          reports: state.reports.map(report =>
+            report.id === id
+              ? {
+                  ...report,
+                  ...updates,
+                  updatedAt: now,
+                  statusHistory: [
+                    ...report.statusHistory,
+                    {
+                      from: report.status,
+                      to: 'draft',
+                      timestamp: now,
+                      userId: report.technicianId
+                    }
+                  ]
+                }
+              : report
+          )
+        }));
       },
 
       submitReport: (id) => {
@@ -169,7 +290,7 @@ export const useReportStore = create<ReportState>()(
         }));
       },
 
-      rejectReport: (id, adminId, reason) => {
+      rejectReport: (id, _, reason) => {
         const { canApprove } = get().canApproveReport(id);
         if (!canApprove) {
           throw new Error('Le rapport ne peut pas être rejeté');

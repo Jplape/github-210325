@@ -1,5 +1,15 @@
-import { Database } from '../types_new/supabase';
+import type { Task } from './task';
 
-export type Task = Database['public']['Tables']['tasks']['Row'];
-export type Client = Database['public']['Tables']['clients']['Row'];
-export type User = Database['public']['Tables']['users']['Row'];
+export interface TaskChange {
+  new: Task | null;
+  old: Task | null;
+}
+
+export interface TaskChangePayload {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  new: Task | null;
+  old: Task | null;
+  schema: string;
+  table: string;
+  commit_timestamp: string;
+}

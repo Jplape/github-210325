@@ -20,9 +20,13 @@ export default function StatCard({ name, value, icon: Icon, color, description, 
         name === "Tâches du jour" ? "/tasks?date=today" :
         name === "Tâches non assignées" ? "/tasks?assignment=unassigned" :
         name === "Interventions en cours" ? "/tasks?status=pending" :
-        "/tasks"
+        name === "Clients" ? "/clients" :
+        name === "Équipements" ? "/equipment" :
+        name === "Statistiques" ? "/statistics" :
+        name === "Rapports" ? "/reports" :
+        "/dashboard"
       }
-      className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow duration-200 group"
+      className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md group hover:scale-[1.02] transform transition-all duration-200"
     >
       <div className="p-5">
         <div className="flex items-center">

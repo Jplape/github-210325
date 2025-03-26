@@ -22,4 +22,5 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   reportId?: string; // Add this field to link to reports
+  origin?: 'local' | 'remote'; // For sync conflict resolution
 }
