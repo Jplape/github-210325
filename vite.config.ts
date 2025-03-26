@@ -10,12 +10,9 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 3000,
     host: '0.0.0.0',
-    open: true,
-    hmr: {
-      clientPort: 443
-    }
+    open: true
   },
   preview: {
     port: 4173,

@@ -23,12 +23,12 @@ export default function Tasks() {
     const searchParams = new URLSearchParams(window.location.search);
     return {
       status: searchParams.get('status') || 'all',
-      priority: searchParams.get('priority') || 'all',
-      technician: searchParams.get('technician') === 'unassigned' ? 'unassigned' : 'all',
-      client: searchParams.get('client') || 'all',
-      equipment: searchParams.get('equipment') || 'all',
+      priority: 'all',
+      technician: 'all',
+      client: 'all',
+      equipment: 'all',
       assignment: searchParams.get('assignment') || 'all',
-      date: searchParams.get('date') === 'today' ? 'today' : 'all'
+      date: searchParams.has('date') ? 'today' : 'all'
     };
   });
 

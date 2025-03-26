@@ -11,13 +11,17 @@ interface StatCardProps {
     value: string;
     label: string;
   };
-  link: string;
 }
 
-export default function StatCard({ name, value, icon: Icon, color, description, trend, link }: StatCardProps) {
+export default function StatCard({ name, value, icon: Icon, color, description, trend }: StatCardProps) {
   return (
-    <Link 
-      to={link}
+    <Link
+      to={
+        name === "Tâches du jour" ? "/tasks?date=today" :
+        name === "Tâches non assignées" ? "/tasks?assignment=unassigned" :
+        name === "Interventions en cours" ? "/tasks?status=pending" :
+        "/tasks"
+      }
       className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow duration-200 group"
     >
       <div className="p-5">
